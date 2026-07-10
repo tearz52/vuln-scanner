@@ -29,6 +29,17 @@ def grab_banner(target, port):
         except:
                 return None
 
+def vulnerability_scan(target):
+        print(f"Scanning target {target} for exposed vulnerabilities... ")
+        nm = nmap.PortScanner()
+        try:
+                nm.scan(hosts=target,arguments="-O -sV --script=vuln")
+                return nm[target]
+        except Exception as e:
+                print(f"Error during vulnerability scan: {e}")
+                return None
+
+
 #conducts network scanning and returns information
 #regarding found open ports and banners for each ports found respectively
 def network_scan(target, start_port, end_port):
@@ -48,6 +59,21 @@ def network_scan(target, start_port, end_port):
                         print(f"Banner was found for {target}::{port} --> {banner}")
                 else:
                         print(f"No banner was found for {target}::{port}")
+
+        vuln_info = vulnerability_scan(target)
+        if vuln_info:
+                if 'hostnames' in vuln_info:
+                        print(f"Hostnames: {vuln_info['hostnames']}")
+                if 'osmatch' in vuln_info:
+                        print(f"Operating System: {vuln_info['osmatch']}")
+                if 'vulns' in vuln_info:
+                        print(f"Vulnerabilities: {vuln_info['vulns']}")
+
+        else:
+                print("No vulnerabilities were able to be detected or is unable to be detected successfully.")
+
+        end_time = datetime.now()
+        print(f"Scan completed in: {end_time - start_time}")
 
 
 if __name__ == "__main__":
