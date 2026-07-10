@@ -80,3 +80,5 @@ if __name__ == "__main__":
         target_ip = input("Enter target IP or Hostname to scan: ")
         start_port = int(input("Specify which port to start scanning from: "))
         end_port = int(input("Specify which port to end scan on: "))
+
+        network_scan(target_ip, start_port, end_port)
