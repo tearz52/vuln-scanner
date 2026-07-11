@@ -1,9 +1,15 @@
+import os
 import socket
 import re
+from os import environ
+
 import requests
 import nmap
+import nvdlib
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+NVD_API_KEY = os.environ.get("247706c8-92e5-48c5-900a-57672bf0b82a")
 
 logo = r"""
 
