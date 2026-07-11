@@ -123,31 +123,32 @@ def grab_banner(target, port):
             sock.settimeout(2)
             sock.connect((target, port))
 
-            # To grab from HTTP ports
-            if port in [80, 8080, 8000]:
 
-                request = (
-                    f"GET / HTTP/1.1\r\n"
-                    f"Host: {target}\r\n"
-                    "Connection: close\r\n\r\n"
-                )
+            try:
+                response = sock.recv(4096).decode("utf-8", errors="ignore")
 
-                sock.send(request.encode())
+                if response.strip():
+                    return port, response.strip()
+
+            except socket.timeout:
+                pass
+
+            # If no banner try  HTTP request
+            request = (
+                f"GET / HTTP/1.1\r\n"
+                f"Host: \x1b[38;5;214m{target}\x1b[0m\r\n"
+                "Connection: close\r\n\r\n"
+            )
+
+            sock.send(request.encode())
 
             response = sock.recv(4096).decode("utf-8", errors="ignore")
 
-            # for HTTP keep the server header
-            if port in [80, 8080, 8000]:
+            for line in response.split("\r\n"):
+                if line.lower().startswith("server:"):
+                    return port, line.replace("Server:", "").strip()
 
-                for line in response.split("\r\n"):
-                    if line.lower().startswith("server:"):
-                        banner = line.replace("Server:", "").strip()
-                        return port, banner
-
-                return port, None
-
-            #
-            return port, response.strip()
+            return port, None
 
     except Exception:
         return port, None
@@ -191,7 +192,6 @@ def parse_banner(banner):
 
 
     if "Apache" in banner:
-
         match = re.search(r"Apache/([\d.]+)", banner)
 
         return {
@@ -201,19 +201,7 @@ def parse_banner(banner):
         }
 
 
-    if "OpenSSH" in banner:
-
-        match = re.search(r"OpenSSH[_/]([\d.]+)", banner)
-
-        return {
-            "service": "SSH",
-            "product": "OpenSSH",
-            "version": match.group(1) if match else None
-        }
-
-
-    if "nginx" in banner.lower():
-
+    elif "nginx" in banner.lower():
         match = re.search(r"nginx/([\d.]+)", banner, re.IGNORECASE)
 
         return {
@@ -223,14 +211,90 @@ def parse_banner(banner):
         }
 
 
-    if "mysql" in banner.lower():
+    elif "OpenSSH" in banner:
+        match = re.search(r"OpenSSH[_/]([\d.]+)", banner)
 
-        match = re.search(r"([\d]+\.[\d]+\.[\d]+)", banner)
+        return {
+            "service": "SSH",
+            "product": "OpenSSH",
+            "version": match.group(1) if match else None
+        }
+
+
+    elif "vsFTPd" in banner:
+        match = re.search(r"vsFTPd\s([\d.]+)", banner)
+
+        return {
+            "service": "FTP",
+            "product": "vsFTPd",
+            "version": match.group(1) if match else None
+        }
+
+
+    elif "ProFTPD" in banner:
+        match = re.search(r"ProFTPD\s([\d.a-zA-Z]+)", banner)
+
+        return {
+            "service": "FTP",
+            "product": "ProFTPD",
+            "version": match.group(1) if match else None
+        }
+
+
+    elif "Microsoft-IIS" in banner:
+        match = re.search(r"Microsoft-IIS/([\d.]+)", banner)
+
+        return {
+            "service": "HTTP",
+            "product": "Microsoft IIS",
+            "version": match.group(1) if match else None
+        }
+
+
+    elif "MySQL" in banner:
+        match = re.search(r"([\d.]+).*MySQL", banner)
 
         return {
             "service": "MySQL",
             "product": "MySQL",
             "version": match.group(1) if match else None
+        }
+
+
+    elif "PostgreSQL" in banner:
+        match = re.search(r"PostgreSQL\s([\d.]+)", banner)
+
+        return {
+            "service": "PostgreSQL",
+            "product": "PostgreSQL",
+            "version": match.group(1) if match else None
+        }
+
+
+    elif "Samba" in banner:
+        match = re.search(r"Samba.*?([\d.]+)", banner)
+
+        return {
+            "service": "SMB",
+            "product": "Samba",
+            "version": match.group(1) if match else None
+        }
+
+
+    elif "Redis" in banner:
+        match = re.search(r"Redis.*?v=([\d.]+)", banner)
+
+        return {
+            "service": "Redis",
+            "product": "Redis",
+            "version": match.group(1) if match else None
+        }
+
+    elif "telnet" in banner.lower() or "login:" in banner.lower():
+        return {
+            "service": "Telnet",
+            "product": "Telnet",
+            "version": None
         }
 
     return {
@@ -244,7 +308,7 @@ def cve_lookup(product, version):
     if not product or not version:
         return []
 
-    query = print(f"{product} {version}")
+    query = f"{product} {version}"
 
     url = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 
@@ -254,29 +318,62 @@ def cve_lookup(product, version):
     }
 
     try:
-        response = requests.get(url, params=params, timeout=10)
 
+        response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
 
         data = response.json()
 
-        return data
+        cves = []
+
+        for item in data.get("vulnerabilities", []):
+
+            cve = item["cve"]
+
+            metrics = cve.get("metrics", {})
+
+            score = None
+            severity = None
+
+            if "cvssMetricV31" in metrics:
+
+                cvss = metrics["cvssMetricV31"][0]
+
+                score = cvss["cvssData"]["baseScore"]
+                severity = cvss["cvssData"]["baseSeverity"]
+
+            elif "cvssMetricV30" in metrics:
+
+                cvss = metrics["cvssMetricV30"][0]
+
+                score = cvss["cvssData"]["baseScore"]
+                severity = cvss["cvssData"]["baseSeverity"]
+
+            elif "cvssMetricV2" in metrics:
+
+                cvss = metrics["cvssMetricV2"][0]
+
+                score = cvss["cvssData"]["baseScore"]
+                severity = cvss["baseSeverity"]
+
+            cves.append({
+
+                "id": cve["id"],
+
+                "score": score,
+
+                "severity": severity,
+
+                "description":
+                    cve["descriptions"][0]["value"]
+
+            })
+
+        return cves
 
     except Exception as e:
         print(e)
         return []
-
-
-
-def vulnerability_scan(target):
-        print(f"Scanning target \x1b[38;5;214m{target}\x1b[0m for exposed vulnerabilities... ")
-        nm = nmap.PortScanner()
-        try:
-                nm.scan(hosts=target,arguments="-O -sV --script=vuln")
-                return nm[target]
-        except Exception as e:
-                print(f"Error during vulnerability scan: \x1b[91m{e}\x1b[0m")
-                return None
 
 
 #conducts network scanning and returns information
@@ -310,22 +407,12 @@ def network_scan(target, start_port, end_port):
             else:
                 print(f"\x1b[91mNo banner found for\x1b[0m \x1b[38;5;214m{target}\x1b[0m::\x1b[38;5;214m{port}\x1b[0m")
 
-        product = banners[port]["product"]
-        version = banners[port]["version"]
+            product = banners[port]["product"]
+            version = banners[port]["version"]
 
-        cve_data = cve_lookup(product, version)
+            cves = cve_lookup(product, version)
 
-        print(cve_data)
-
-
-        vuln_info = vulnerability_scan(target)
-        if vuln_info:
-                if 'hostnames' in vuln_info:
-                        print(f"Hostnames: {vuln_info['hostnames']}")
-                if 'osmatch' in vuln_info:
-                        print(f"Operating System: {vuln_info['osmatch']}")
-                if 'vulns' in vuln_info:
-                        print(f"Vulnerabilities: {vuln_info['vulns']}")
+            banners[port]["cve"] = cves
 
         else:
                 print("\x1b[91mNo vulnerabilities were able to be detected or is unable to be detected successfully.\x1b[0m")
