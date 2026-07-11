@@ -2,8 +2,13 @@ import socket
 import re
 import requests
 import nmap
+import time
+import os
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# NVD Nist Key
+NVD_API_KEY = os.environ.get("NVD_API_KEY")
 
 logo = r"""
 
@@ -72,16 +77,19 @@ logo = r"""
 / /   | |_| |         / /   | |_ 
 \ \._,\ '/|_|         \ \._,\ '/ 
  `--'  `"              `--'  `"  
- 
+
 """
+
 
 def logo_launch():
     print(f"\033[38;5;135m{logo}\033[0m")
     print("\033[38;5;135mAria Scanner v1.0.0 initialized.\033[0m\n")
 
+
 # scans for open ports from desired range, and returns open ports into list to be used and output
 def port_scan(target, start_port, end_port):
-    print(f"Scanning target: \x1b[38;5;214m{target}\x1b[0m for open ports from \x1b[38;5;214m{start_port}\x1b[0m to \x1b[38;5;214m{end_port}\x1b[0m ...")
+    print(
+        f"Scanning target: \x1b[38;5;214m{target}\x1b[0m for open ports from \x1b[38;5;214m{start_port}\x1b[0m to \x1b[38;5;214m{end_port}\x1b[0m ...")
 
     open_ports = []
 
@@ -103,7 +111,7 @@ def port_scan(target, start_port, end_port):
         futures = []
 
         for port in range(start_port, end_port):
-            future = executor.submit(check_port,port)
+            future = executor.submit(check_port, port)
             futures.append(future)
 
         for future in as_completed(futures):
@@ -114,15 +122,14 @@ def port_scan(target, start_port, end_port):
 
     return open_ports
 
+
 # fetches the welcome banner on session connect
 def grab_banner(target, port):
-
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
 
             sock.settimeout(2)
             sock.connect((target, port))
-
 
             try:
                 response = sock.recv(4096).decode("utf-8", errors="ignore")
@@ -153,6 +160,7 @@ def grab_banner(target, port):
     except Exception:
         return port, None
 
+
 def banner_scan(target, open_ports):
     print(f"Attempting to grab banners from open ports:\x1b[38;5;214m{open_ports}\x1b[0m")
 
@@ -178,18 +186,16 @@ def banner_scan(target, open_ports):
                 "risk": None
             }
 
-
     return banners
 
-def parse_banner(banner):
 
+def parse_banner(banner):
     if not banner:
         return {
             "service": None,
             "product": None,
             "version": None
         }
-
 
     if "Apache" in banner:
         match = re.search(r"Apache/([\d.]+)", banner)
@@ -303,8 +309,8 @@ def parse_banner(banner):
         "version": None
     }
 
-def cve_lookup(product, version):
 
+def cve_lookup(product, version):
     if not product or not version:
         return []
 
@@ -317,12 +323,28 @@ def cve_lookup(product, version):
         "resultsPerPage": 5
     }
 
+    headers = {"User-Agent": "AriaScanner/1.0"}
+    if NVD_API_KEY:
+        headers["apiKey"] = NVD_API_KEY
+
     try:
 
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+
+        # NVD rate limits: 5 req/30s without a key, 50 req/30s with one.
+        # Sleeping here (instead of raise_for_status failing silently) is what
+        # keeps sequential lookups across many open ports from getting 403'd.
+        time.sleep(0.65 if NVD_API_KEY else 6.5)
+
+        if response.status_code != 200:
+            print(
+                f"\x1b[91mNVD lookup failed for '{query}': HTTP {response.status_code} - {response.text[:200]}\x1b[0m")
+            return []
 
         data = response.json()
+
+        if data.get("totalResults", 0) == 0:
+            print(f"NVD returned 0 results for '{query}' (no CVE description matched these keywords).")
 
         cves = []
 
@@ -376,55 +398,55 @@ def cve_lookup(product, version):
         return []
 
 
-#conducts network scanning and returns information
-#regarding found open ports and banners for each ports found respectively
+# conducts network scanning and returns information
+# regarding found open ports and banners for each ports found respectively
 def network_scan(target, start_port, end_port):
-        print(f"Starting network scanning services for target: \x1b[38;5;214m{target}\x1b[0m ... ")
-        start_time = datetime.now()
+    print(f"Starting network scanning services for target: \x1b[38;5;214m{target}\x1b[0m ... ")
+    start_time = datetime.now()
 
-        open_ports = port_scan(target, start_port, end_port)
+    open_ports = port_scan(target, start_port, end_port)
 
-        if open_ports:
-                print(f"Open ports found: \x1b[38;5;214m{open_ports}\x1b[0m")
+    if open_ports:
+        print(f"Open ports found: \x1b[38;5;214m{open_ports}\x1b[0m")
+    else:
+        print("\x1b[91mNo open ports found on target.\x1b[0m")
+
+    banners = banner_scan(target, open_ports)
+
+    for port in sorted(banners):
+        banner = banners[port]["banner"]
+
+        banners[port].update(parse_banner(banner))
+
+        if banner:
+            print(f"Banner found for \x1b[38;5;214m{target}\x1b[0m::\x1b[38;5;214m{port}\x1b[0m ")
+            print(f"Port: \x1b[38;5;214m{port}\x1b[0m")
+            print(f"Banner: \x1b[38;5;214m{banners[port]['banner']}\x1b[0m")
+            print(f"Service: \x1b[38;5;214m{banners[port]['service']}\x1b[0m")
+            print(f"Product: \x1b[38;5;214m{banners[port]['product']}\x1b[0m")
+            print(f"Version: \x1b[38;5;214m{banners[port]['version']}\x1b[0m")
+            print("-" * 40)
         else:
-                print("\x1b[91mNo open ports found on target.\x1b[0m")
+            print(f"\x1b[91mNo banner found for\x1b[0m \x1b[38;5;214m{target}\x1b[0m::\x1b[38;5;214m{port}\x1b[0m")
 
-        banners = banner_scan(target, open_ports)
+        product = banners[port]["product"]
+        version = banners[port]["version"]
 
-        for port in sorted(banners):
-            banner = banners[port]["banner"]
+        cves = cve_lookup(product, version)
 
-            banners[port].update(parse_banner(banner))
+        banners[port]["cve"] = cves
 
-            if banner:
-                print(f"Banner found for \x1b[38;5;214m{target}\x1b[0m::\x1b[38;5;214m{port}\x1b[0m ")
-                print(f"Port: \x1b[38;5;214m{port}\x1b[0m")
-                print(f"Banner: \x1b[38;5;214m{banners[port]['banner']}\x1b[0m")
-                print(f"Service: \x1b[38;5;214m{banners[port]['service']}\x1b[0m")
-                print(f"Product: \x1b[38;5;214m{banners[port]['product']}\x1b[0m")
-                print(f"Version: \x1b[38;5;214m{banners[port]['version']}\x1b[0m")
-                print("-" * 40)
-            else:
-                print(f"\x1b[91mNo banner found for\x1b[0m \x1b[38;5;214m{target}\x1b[0m::\x1b[38;5;214m{port}\x1b[0m")
+    else:
+        print("\x1b[91mNo vulnerabilities were able to be detected or is unable to be detected successfully.\x1b[0m")
 
-            product = banners[port]["product"]
-            version = banners[port]["version"]
-
-            cves = cve_lookup(product, version)
-
-            banners[port]["cve"] = cves
-
-        else:
-                print("\x1b[91mNo vulnerabilities were able to be detected or is unable to be detected successfully.\x1b[0m")
-
-        end_time = datetime.now()
-        print(f"Scan completed in: \x1b[38;5;214m{end_time - start_time}\x1b[0m")
+    end_time = datetime.now()
+    print(f"Scan completed in: \x1b[38;5;214m{end_time - start_time}\x1b[0m")
 
 
 if __name__ == "__main__":
-        logo_launch()
-        target_ip = input("Enter target IP or Hostname to scan: ")
-        start_port = int(input("Specify which port to start scanning from: "))
-        end_port = int(input("Specify which port to end scan on: "))
+    logo_launch()
+    target_ip = input("Enter target IP or Hostname to scan: ")
+    start_port = int(input("Specify which port to start scanning from: "))
+    end_port = int(input("Specify which port to end scan on: "))
 
-        network_scan(target_ip, start_port, end_port)
+    network_scan(target_ip, start_port, end_port)
