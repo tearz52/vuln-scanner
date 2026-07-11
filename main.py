@@ -1,5 +1,6 @@
 import socket
 import requests
+import re
 import nmap
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -41,16 +42,71 @@ def port_scan(target, start_port, end_port):
 
 # fetches the welcome banner on session connect
 def grab_banner(target, port):
-        print(f"Attempting to grab banner for {target}::{port}")
+
         try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.connect((target,port))
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
                 sock.settimeout(2)
-                banner = sock.recv(1024).decode('utf-8', errors='ignore')
-                sock.close()
-                return banner.strip()
-        except:
-                return None
+                sock.connect((target, port))
+                banner = sock.recv(1024).decode("utf-8", errors="ignore")
+                return port, banner.strip()
+        except Exception:
+                return port, None
+
+def banner_scan(target, open_ports):
+    print(f"Attempting to grab banners from open ports:{open_ports}")
+
+    banners = {}
+
+    with ThreadPoolExecutor(max_workers=100) as executor:
+
+        futures = []
+
+        for port in open_ports:
+            future = executor.submit(grab_banner, target, port)
+            futures.append(future)
+
+        for future in as_completed(futures):
+            port, banner = future.result()
+
+            banners[port] = {
+                "banner": banner
+            }
+
+
+    return banners
+
+def parse_banner(banner):
+
+    # in the case of empty banners
+    if not banner:
+        return {
+            "service": None,
+            "product": None,
+            "version": None
+        }
+
+    # expected output for Apache banners
+    if "Apache" in banner:
+        match = re.search(r"Apache/([\d.]+)", banner)
+
+        if match:
+            version = match.group(1)
+        else:
+            version = None
+
+        return {
+            "service": "HTTP",
+            "product": "Apache",
+            "version": version
+        }
+
+    # in the case that the banner is unknown
+    return {
+        "service": None,
+        "product": None,
+        "version": None
+    }
+
 
 def vulnerability_scan(target):
         print(f"Scanning target {target} for exposed vulnerabilities... ")
@@ -76,12 +132,23 @@ def network_scan(target, start_port, end_port):
         else:
                 print("No open ports found on target.")
 
-        for port in open_ports:
-                banner = grab_banner(target, port)
-                if banner:
-                        print(f"Banner was found for {target}::{port} --> {banner}")
-                else:
-                        print(f"No banner was found for {target}::{port}")
+        banners = banner_scan(target, open_ports)
+
+        for port in sorted(banners):
+            banner = banners[port]["banner"]
+
+            info = parse_banner(banner)
+
+            banners[port]["service"] = info["service"]
+            banners[port]["product"] = info["product"]
+            banners[port]["version"] = info["version"]
+
+            if banner:
+                print(f"Banner found for {target}::{port} ---> {banner}")
+            else:
+                print(f"No banner found for {target}::{port}")
+
+
 
         vuln_info = vulnerability_scan(target)
         if vuln_info:
