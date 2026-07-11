@@ -2,19 +2,42 @@ import socket
 import requests
 import nmap
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # scans for open ports from desired range, and returns open ports into list to be used and output
 def port_scan(target, start_port, end_port):
-        print(f"Scanning target: {target} for open ports from {start_port} to {end_port} ...")
-        open_ports = []
+    print(f"Scanning target: {target} for open ports from {start_port} to {end_port} ...")
+
+    open_ports = []
+
+    def check_port(port):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1)
+
+        result = sock.connect_ex((target, port))
+
+        sock.close()
+
+        if result == 0:
+            return port
+        else:
+            return None
+
+    with ThreadPoolExecutor(max_workers=100) as executor:
+
+        futures = []
+
         for port in range(start_port, end_port):
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                socket.setdefaulttimeout(1)
-                result = sock.connect_ex((target, port))
-                if result == 0:
-                        open_ports.append(port)
-                sock.close()
-        return open_ports
+            future = executor.submit(check_port,port)
+            futures.append(future)
+
+        for future in as_completed(futures):
+            result = future.result()
+
+            if result is not None:
+                open_ports.append(result)
+
+    return open_ports
 
 # fetches the welcome banner on session connect
 def grab_banner(target, port):
