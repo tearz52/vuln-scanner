@@ -1,12 +1,87 @@
 import socket
 import re
+import requests
 import nmap
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+logo = r"""
+                  .--.           
+                  |__|           
+          .-,.--. .--.           
+    __    |  .-. ||  |    __     
+ .:--.'.  | |  | ||  | .:--.'.   
+/ |   \ | | |  | ||  |/ |   \ |  
+`" __ | | | |  '- |  |`" __ | |  
+ .'.''| | | |     |__| .'.''| |  
+/ /   | |_| |         / /   | |_ 
+\ \._,\ '/|_|         \ \._,\ '/ 
+ `--'  `"              `--'  `"  
+ 
+ 
+ ######******#%%%%%%%%%%%%%%###***####%%%##########****++++****++++++++++*%%%####
+******####%%%%%%%%%%%%%%%%%###+===+++========+++++++++++++#%**##################
+*****######%%%%%%%%%%%%%##*=++++++++*+++++++==--=++*#####%%%%%%#########**++++++
+*********##%%%%%%%%%%###+=+==++====++++==+==++==----####%%%%%*++=====++###*++++*
++++++******###***%%%@#+=====+==-----=====+==-==+==---=++%%#*%@@@@@@@@@#*+++===--
++++++++++++++++++**%#+========----:---==--====-=-=+-==-*@@@@@@@@@@@@@@-.....:.  
++++++++*%@@@@@@@@@@+==========-:--:----==----=--====----+@%**=++###@@@::::--====
++++++++#@@@@@@@@%#*+==-=--=+=---:-:-----==--::----=+==---=#@+*==-++++++++++++=++
+++++++++%@%%*+++++=====---+*=--:::::------=--::=-===+=-===+%@+*--==+++++++++++++
++++++===========+++==----=+=-=--::::---------:-:---=++=-=*+#@%++--=++++++++++++=
++++==========+-=++==-----======--:-::=----=-==:-:-=-=++=-+#*@@%+---+++==---==*+=
+*+++++====---=-=++==-----==+==----:::-----===--:-:===++===@#%@@*=--+****+==++***
++===++=-----=+=%++=-:-=++=+=---=-----:=---===---::-===++==%*%@%#+-==*****+*****+
+----+=------====+==:-=-+===-:---=----:=-=====+---::-===+=+#+#@@#+==-=:..        
+...:+=------=======-====+=-:::--=-=---==-=====+=---=====+==+#@@#+-=--.  ...     
+...:+=------========-++==-::-----=====-=====--=++---======+##@##+-===:......    
+:::-+=------====+====+++=+=====---====-===-=---=+========-=##@##==-==:......    
+----=-------==+++===+*+====-------------==*#%%%%#++=-+===--=*@*#+---=::::::.    
+----=---------=+====++#@*%@%%*=--:::---=+*=%%%#=%*+======-=**%+++==--:::.::.    
+------------===#++===++*--==*+--::::::-----==+=---====-==-+#*%++=-==:::::::.    
+---==-------=++#===+=+-:::::::::::..::::::::::::::-======:-#*#+++===.           
+*++*+=------+++#=*=+=+-::::....:::..:::..........::=====+==***++===+-------.    
+**##***********%*#=++=-:::...:::::..:::::........::=====.-=**++==--=-------.    
+*###***********%*%+=+==:::::::::::..::::::......::-=====-==+*+==+--=-======.    
+**#*#*******#*=%*%*+*+*=--::::::-=====-::.....::::-+=+==---+*+===---===+===. .. 
+*####*******##*%*%*++*+*==---::::::::::.:::::::::-=*+*+-:::-+*==-===---====-----
+######******##.....:.....:-=-------::--:::::::---:::...-::....==-===============
+#####*##****#:....:..::....::------:::::::::--::::::::..:::...=+==--============
+########*###-....:...:....::::---:::::..:::--::::....-:..-:...===-+--===========
+##%#*###*=......:...::...:-:::-=--::...:::=+-:-==:...:::..:...:=+-=-------------
+****+**=.  ....::..::....::...:::::-:::-=-:::::::::...::......:==--=------------
+*****=     ....:...::...:::::..:::::=++=:::::::::::....:.....:++==-:-------:::::
+****.        ..::..::::::::::::::::::-=-::::::::::::::::.::-=#+===---:----::::::
+***:     .........::::::::::::::::::::-:::::::::::::::::--==+=+===---:----::::::
+***:    ..........::::::::::::::::::::-:::::::::::=:-------==+++-----:::-:::::::
+***:     ......::::::::::-:---:::::::::::::::---%*---------==+=+=--=--::-:::::::
+***:      ..::::::::::::::::::.......::::.::::::-----------==+++==-==-::::::::::
+++++.    .....:----------:...........::.........::-----------=+===-==--:::::....
+++++:     .....:---==----............:::.........:--------:::-++==-=+--:::::....
+++++=.     .....::---===............::::..........-==--:::::::++====+--::::::...
+=====-     .....::::--==............::::..........:--:::::...:-=====+--:::::::..
+======..   .....:=+++*%:............::-:...........%%*+++=:..:-+====+-=:::::::..
+======-....-###%%%%%%%%.............:--:...........*%%%%%%%%%%#==--=+==:::::::::
+++=====-+%%%%%#%#***++-.............:=-::..........:===***#%#%#=+-=++=+:-:::::::
+++=======%##+-:::::::-:............::=-::...........:::::::::-#+===+*==--:::::::
+++++++++===.........::.............::==::............::....::-#+===+*=---:::::::
++++===+++++-........:..............::-=-::...........:.....::-++++=+*=:-::::::::
+++=========-.......................:-*+-::.................::=++=-=+==:-::::::::
+++==========:.....................:::-=-::.................:--++=+====:-::::::::
++============:....................:::---:::...........:....:-:++=*==+=:-::::::::
++============:....................::----:::................:=:++=+===-:-::::::::
++++===========...................:::----:::............:..::=:+++=+==---::::::::
+++=============..................:::::--::::..............::=-+++=+==-=-::::::::
+
+"""
+
+def logo_launch():
+    print(f"\033[36m{logo}\033[0m")
+    print("Aria Scanner v1.0.0 initialized.\n")
+
 # scans for open ports from desired range, and returns open ports into list to be used and output
 def port_scan(target, start_port, end_port):
-    print(f"Scanning target: {target} for open ports from {start_port} to {end_port} ...")
+    print(f"Scanning target: \x1b[38;5;214m{target}\x1b[0m for open ports from \x1b[38;5;214m{start_port}\x1b[0m to \x1b[38;5;214m{end_port}\x1b[0m ...")
 
     open_ports = []
 
@@ -52,7 +127,7 @@ def grab_banner(target, port):
                 return port, None
 
 def banner_scan(target, open_ports):
-    print(f"Attempting to grab banners from open ports:{open_ports}")
+    print(f"Attempting to grab banners from open ports:\x1b[38;5;214m{open_ports}\x1b[0m")
 
     banners = {}
 
@@ -68,7 +143,12 @@ def banner_scan(target, open_ports):
             port, banner = future.result()
 
             banners[port] = {
-                "banner": banner
+                "banner": banner,
+                "service": None,
+                "product": None,
+                "version": None,
+                "cve": [],
+                "risk": None
             }
 
 
@@ -106,30 +186,58 @@ def parse_banner(banner):
         "version": None
     }
 
+def cve_lookup(product, version):
+
+    if not product or not version:
+        return []
+
+    query = print(f"{product} {version}")
+
+    url = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+
+    params = {
+        "keywordSearch": query,
+        "resultsPerPage": 5
+    }
+
+    try:
+        response = requests.get(url, params=params, timeout=10)
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        return data
+
+    except Exception as e:
+        print(e)
+        return []
+
+
 
 def vulnerability_scan(target):
-        print(f"Scanning target \x1b[35m{target}\x1b[0m for exposed vulnerabilities... ")
+        print(f"Scanning target \x1b[38;5;214m{target}\x1b[0m for exposed vulnerabilities... ")
         nm = nmap.PortScanner()
         try:
                 nm.scan(hosts=target,arguments="-O -sV --script=vuln")
                 return nm[target]
         except Exception as e:
-                print(f"Error during vulnerability scan: {e}")
+                print(f"Error during vulnerability scan: \x1b[91m{e}\x1b[0m")
                 return None
 
 
 #conducts network scanning and returns information
 #regarding found open ports and banners for each ports found respectively
 def network_scan(target, start_port, end_port):
-        print(f"Starting network scanning services for target: \x1b[35m{target}\x1b[0m ... ")
+        print(f"Starting network scanning services for target: \x1b[38;5;214m{target}\x1b[0m ... ")
         start_time = datetime.now()
 
         open_ports = port_scan(target, start_port, end_port)
 
         if open_ports:
-                print(f"Open ports found: {open_ports}")
+                print(f"Open ports found: \x1b[38;5;214m{open_ports}\x1b[0m")
         else:
-                print("No open ports found on target.")
+                print("\x1b[91mNo open ports found on target.\x1b[0m")
 
         banners = banner_scan(target, open_ports)
 
@@ -139,16 +247,22 @@ def network_scan(target, start_port, end_port):
             banners[port].update(parse_banner(banner))
 
             if banner:
-                print(f"Banner found for \x1b[35m{target}\x1b[0m::\x1b[35m{port}\x1b[0m ")
-                print(f"Port: {port}")
-                print(f"Banner: {banners[port]['banner']}")
-                print(f"Service: {banners[port]['service']}")
-                print(f"Product: {banners[port]['product']}")
-                print(f"Version: {banners[port]['version']}")
+                print(f"Banner found for \x1b[38;5;214m{target}\x1b[0m::\x1b[38;5;214m{port}\x1b[0m ")
+                print(f"Port: \x1b[38;5;214m{port}\x1b[0m")
+                print(f"Banner: \x1b[38;5;214m{banners[port]['banner']}\x1b[0m")
+                print(f"Service: \x1b[38;5;214m{banners[port]['service']}\x1b[0m")
+                print(f"Product: \x1b[38;5;214m{banners[port]['product']}\x1b[0m")
+                print(f"Version: \x1b[38;5;214m{banners[port]['version']}\x1b[0m")
                 print("-" * 40)
             else:
-                print(f"No banner found for {target}::{port}")
+                print(f"\x1b[91mNo banner found for\x1b[0m \x1b[38;5;214m{target}\x1b[0m::\x1b[38;5;214m{port}\x1b[0m")
 
+        product = banners[port]["product"]
+        version = banners[port]["version"]
+
+        cve_data = cve_lookup(product, version)
+
+        print(cve_data)
 
 
         vuln_info = vulnerability_scan(target)
@@ -161,13 +275,14 @@ def network_scan(target, start_port, end_port):
                         print(f"Vulnerabilities: {vuln_info['vulns']}")
 
         else:
-                print("No vulnerabilities were able to be detected or is unable to be detected successfully.")
+                print("\x1b[91mNo vulnerabilities were able to be detected or is unable to be detected successfully.\x1b[0m")
 
         end_time = datetime.now()
-        print(f"Scan completed in: {end_time - start_time}")
+        print(f"Scan completed in: \x1b[38;5;214m{end_time - start_time}\x1b[0m")
 
 
 if __name__ == "__main__":
+        logo_launch()
         target_ip = input("Enter target IP or Hostname to scan: ")
         start_port = int(input("Specify which port to start scanning from: "))
         end_port = int(input("Specify which port to end scan on: "))
