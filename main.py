@@ -76,7 +76,7 @@ logo = r"""
 """
 
 def logo_launch():
-    print(f"\033[36m{logo}\033[0m")
+    print(f"\e[38;5;201m{logo}\033[0m")
     print("Aria Scanner v1.0.0 initialized.\n")
 
 # scans for open ports from desired range, and returns open ports into list to be used and output
