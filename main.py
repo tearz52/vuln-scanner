@@ -108,7 +108,7 @@ def parse_banner(banner):
 
 
 def vulnerability_scan(target):
-        print(f"Scanning target {target} for exposed vulnerabilities... ")
+        print(f"Scanning target \x1b[35m{target}\x1b[0m for exposed vulnerabilities... ")
         nm = nmap.PortScanner()
         try:
                 nm.scan(hosts=target,arguments="-O -sV --script=vuln")
@@ -121,7 +121,7 @@ def vulnerability_scan(target):
 #conducts network scanning and returns information
 #regarding found open ports and banners for each ports found respectively
 def network_scan(target, start_port, end_port):
-        print(f"Starting network scanning services for target: {target} ... ")
+        print(f"Starting network scanning services for target: \x1b[35m{target}\x1b[0m ... ")
         start_time = datetime.now()
 
         open_ports = port_scan(target, start_port, end_port)
@@ -139,7 +139,7 @@ def network_scan(target, start_port, end_port):
             banners[port].update(parse_banner(banner))
 
             if banner:
-                print(f"Banner found for {target}::{port} ---> {banner}")
+                print(f"Banner found for \x1b[35m{target}\x1b[0m::\x1b[35m{port}\x1b[0m ")
                 print(f"Port: {port}")
                 print(f"Banner: {banners[port]['banner']}")
                 print(f"Service: {banners[port]['service']}")
