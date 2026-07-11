@@ -137,14 +137,16 @@ def network_scan(target, start_port, end_port):
         for port in sorted(banners):
             banner = banners[port]["banner"]
 
-            info = parse_banner(banner)
-
-            banners[port]["service"] = info["service"]
-            banners[port]["product"] = info["product"]
-            banners[port]["version"] = info["version"]
+            banners[port].update(parse_banner(banner))
 
             if banner:
                 print(f"Banner found for {target}::{port} ---> {banner}")
+                print(f"Port: {port}")
+                print(f"Banner: {banners[port]['banner']}")
+                print(f"Service: {banners[port]['service']}")
+                print(f"Product: {banners[port]['product']}")
+                print(f"Version: {banners[port]['version']}")
+                print("-" * 40)
             else:
                 print(f"No banner found for {target}::{port}")
 
