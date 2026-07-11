@@ -117,14 +117,40 @@ def port_scan(target, start_port, end_port):
 # fetches the welcome banner on session connect
 def grab_banner(target, port):
 
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                sock.settimeout(2)
-                sock.connect((target, port))
-                banner = sock.recv(1024).decode("utf-8", errors="ignore")
-                return port, banner.strip()
-        except Exception:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+
+            sock.settimeout(2)
+            sock.connect((target, port))
+
+            # To grab from HTTP ports
+            if port in [80, 8080, 8000]:
+
+                request = (
+                    f"GET / HTTP/1.1\r\n"
+                    f"Host: {target}\r\n"
+                    "Connection: close\r\n\r\n"
+                )
+
+                sock.send(request.encode())
+
+            response = sock.recv(4096).decode("utf-8", errors="ignore")
+
+            # for HTTP keep the server header
+            if port in [80, 8080, 8000]:
+
+                for line in response.split("\r\n"):
+                    if line.lower().startswith("server:"):
+                        banner = line.replace("Server:", "").strip()
+                        return port, banner
+
                 return port, None
+
+            #
+            return port, response.strip()
+
+    except Exception:
+        return port, None
 
 def banner_scan(target, open_ports):
     print(f"Attempting to grab banners from open ports:\x1b[38;5;214m{open_ports}\x1b[0m")
@@ -156,7 +182,6 @@ def banner_scan(target, open_ports):
 
 def parse_banner(banner):
 
-    # in the case of empty banners
     if not banner:
         return {
             "service": None,
@@ -164,22 +189,50 @@ def parse_banner(banner):
             "version": None
         }
 
-    # expected output for Apache banners
-    if "Apache" in banner:
-        match = re.search(r"Apache/([\d.]+)", banner)
 
-        if match:
-            version = match.group(1)
-        else:
-            version = None
+    if "Apache" in banner:
+
+        match = re.search(r"Apache/([\d.]+)", banner)
 
         return {
             "service": "HTTP",
             "product": "Apache",
-            "version": version
+            "version": match.group(1) if match else None
         }
 
-    # in the case that the banner is unknown
+
+    if "OpenSSH" in banner:
+
+        match = re.search(r"OpenSSH[_/]([\d.]+)", banner)
+
+        return {
+            "service": "SSH",
+            "product": "OpenSSH",
+            "version": match.group(1) if match else None
+        }
+
+
+    if "nginx" in banner.lower():
+
+        match = re.search(r"nginx/([\d.]+)", banner, re.IGNORECASE)
+
+        return {
+            "service": "HTTP",
+            "product": "nginx",
+            "version": match.group(1) if match else None
+        }
+
+
+    if "mysql" in banner.lower():
+
+        match = re.search(r"([\d]+\.[\d]+\.[\d]+)", banner)
+
+        return {
+            "service": "MySQL",
+            "product": "MySQL",
+            "version": match.group(1) if match else None
+        }
+
     return {
         "service": None,
         "product": None,
