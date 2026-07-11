@@ -1,5 +1,4 @@
 import socket
-import requests
 import re
 import nmap
 from datetime import datetime
